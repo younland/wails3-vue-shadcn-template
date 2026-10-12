@@ -1,9 +1,16 @@
-// 生成应用图标：蓝色驱动器（梯形机身 + 插槽条 + 指示灯），透明背景。
-// 4 倍超采样后降采样，得到抗锯齿边缘，仅使用标准库。
+// 应用图标工具（纯标准库）。
 //
-// 用法：go run ./build/tools/icon <输出.png> [尺寸]
-// 例：go run ./build/tools/icon build/appicon.png
-//     go run ./build/tools/icon frontend/public/logo.png 256
+// 模式一：程序化渲染旧的蓝色驱动器图标（梯形机身 + 插槽条 + 指示灯），
+// 4 倍超采样后降采样得到抗锯齿边缘。当前品牌图标已改为 build/appicon.svg
+//（内嵌位图），此模式仅作历史参考。
+//
+//	用法：go run ./build/tools/icon <输出.png> [尺寸]
+//	例：go run ./build/tools/icon build/appicon.png
+//
+// 模式二：把现有 PNG 按透明通道裁剪到内容包围盒，再等比缩放到指定尺寸（托盘图标）。
+//
+//	用法：go run ./build/tools/icon tray <输入.png> <输出.png> <尺寸>
+//	例：go run ./build/tools/icon tray build/appicon.png build/windows/tray.png 32
 
 // 4 倍超采样后降采样，得到抗锯齿边缘。仅使用标准库。
 package main
@@ -131,7 +138,140 @@ func render(x, y float64) color.RGBA {
 	return color.RGBA{0, 0, 0, 0}
 }
 
+// alphaBBox 返回非透明像素（alpha > 8）的包围盒。
+func alphaBBox(img *image.RGBA) image.Rectangle {
+	b := img.Bounds()
+	minX, minY, maxX, maxY := b.Dx(), b.Dy(), -1, -1
+	for y := 0; y < b.Dy(); y++ {
+		for x := 0; x < b.Dx(); x++ {
+			if img.RGBAAt(x, y).A > 8 {
+				if x < minX {
+					minX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y > maxY {
+					maxY = y
+				}
+			}
+		}
+	}
+	if maxX < 0 {
+		return image.Rect(0, 0, 0, 0)
+	}
+	return image.Rect(minX, minY, maxX+1, maxY+1)
+}
+
+// boxDownscale 面积平均（box filter）降采样，factor 必须 >= 1 且为整数比例关系由调用方保证。
+func boxDownscale(img *image.RGBA, w, h int) *image.RGBA {
+	src := img.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	fx := float64(src.Dx()) / float64(w)
+	fy := float64(src.Dy()) / float64(h)
+	for y := 0; y < h; y++ {
+		y0 := int(math.Floor(float64(y) * fy))
+		y1 := int(math.Floor(float64(y+1) * fy))
+		if y1 <= y0 {
+			y1 = y0 + 1
+		}
+		for x := 0; x < w; x++ {
+			x0 := int(math.Floor(float64(x) * fx))
+			x1 := int(math.Floor(float64(x+1) * fx))
+			if x1 <= x0 {
+				x1 = x0 + 1
+			}
+			var r, g, b, a, n float64
+			for sy := y0; sy < y1 && sy < src.Dy(); sy++ {
+				for sx := x0; sx < x1 && sx < src.Dx(); sx++ {
+					c := img.RGBAAt(sx, sy)
+					r += float64(c.R)
+					g += float64(c.G)
+					b += float64(c.B)
+					a += float64(c.A)
+					n++
+				}
+			}
+			if n > 0 {
+				dst.SetRGBA(x, y, color.RGBA{uint8(r / n), uint8(g / n), uint8(b / n), uint8(a / n)})
+			}
+		}
+	}
+	return dst
+}
+
+// trayMode 从现有 PNG 生成托盘图标：裁剪到内容包围盒，等比缩放到边长 side，
+// 居中放在透明画布上（留 1px 边距）。
+func trayMode(args []string) {
+	if len(args) != 3 {
+		fmt.Fprintln(os.Stderr, "用法: icon tray <输入.png> <输出.png> <尺寸>")
+		os.Exit(1)
+	}
+	in, out, sideStr := args[0], args[1], args[2]
+	var side int
+	if _, err := fmt.Sscanf(sideStr, "%d", &side); err != nil || side <= 0 {
+		fmt.Fprintln(os.Stderr, "无效尺寸:", sideStr)
+		os.Exit(1)
+	}
+
+	f, err := os.Open(in)
+	if err != nil {
+		panic(err)
+	}
+	src0, err := png.Decode(f)
+	f.Close()
+	if err != nil {
+		panic(err)
+	}
+	src := image.NewRGBA(src0.Bounds())
+	for y := src0.Bounds().Min.Y; y < src0.Bounds().Max.Y; y++ {
+		for x := src0.Bounds().Min.X; x < src0.Bounds().Max.X; x++ {
+			src.Set(x, y, src0.At(x, y))
+		}
+	}
+
+	bbox := alphaBBox(src)
+	if bbox.Empty() {
+		fmt.Fprintln(os.Stderr, "输入图片全透明")
+		os.Exit(1)
+	}
+	crop := src.SubImage(bbox).(*image.RGBA)
+
+	fit := side - 2
+	w, h := fit, fit
+	if crop.Bounds().Dx() > crop.Bounds().Dy() {
+		h = fit * crop.Bounds().Dy() / crop.Bounds().Dx()
+	} else {
+		w = fit * crop.Bounds().Dx() / crop.Bounds().Dy()
+	}
+	scaled := boxDownscale(crop, w, h)
+
+	canvas := image.NewRGBA(image.Rect(0, 0, side, side))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			canvas.SetRGBA((side-w)/2+x, (side-h)/2+y, scaled.RGBAAt(x, y))
+		}
+	}
+
+	o, err := os.Create(out)
+	if err != nil {
+		panic(err)
+	}
+	defer o.Close()
+	if err := png.Encode(o, canvas); err != nil {
+		panic(err)
+	}
+	fmt.Printf("wrote %s (%dx%d)\n", out, side, side)
+}
+
 func main() {
+	if os.Args[1] == "tray" {
+		trayMode(os.Args[2:])
+		return
+	}
 	out := os.Args[1]
 	side := ""
 	if len(os.Args) > 2 {
