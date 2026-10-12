@@ -1,0 +1,51 @@
+version: '3'
+
+vars:
+  APP_NAME: "{{.BinaryName}}"
+  BIN_DIR: "bin"
+  PACKAGE_MANAGER: '{{.Opn}}.PACKAGE_MANAGER | default "pnpm"{{.Cls}}'
+  VITE_PORT: '{{.Opn}}.WAILS_VITE_PORT | default 9245{{.Cls}}'
+  # 版本号：构建时注入二进制（-X main.appVersion）与各平台安装包版本；
+  # 用 `APP_VERSION=1.2.3 task package`（或同名环境变量）覆盖，CI 按 tag 传入。
+  APP_VERSION: '{{.Opn}}.APP_VERSION | default "0.1.0"{{.Cls}}'
+  # Target OS for build/package/run. Defaults to the host OS, and is overridden
+  # by `wails3 build GOOS=...` (or the GOOS env var) for cross-compilation. The
+  # tasks below dispatch to the matching platform Taskfile via this variable.
+  GOOS: '{{.Opn}}.GOOS | default OS{{.Cls}}'
+
+includes:
+  common: ./build/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+  linux: ./build/linux/Taskfile.yml
+
+tasks:
+  build:
+    summary: Builds the application
+    cmds:
+      - task: "{{.Opn}}.GOOS{{.Cls}}:build"
+
+  package:
+    summary: Packages a production build of the application
+    cmds:
+      - task: "{{.Opn}}.GOOS{{.Cls}}:package"
+
+  run:
+    summary: Runs the application
+    cmds:
+      - task: "{{.Opn}}.GOOS{{.Cls}}:run"
+
+  dev:
+    summary: Runs the application in development mode
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.Opn}}.VITE_PORT{{.Cls}}
+
+  install:msix:tools:
+    summary: Installs tools required for Windows MSIX packaging
+    cmds:
+      - task: windows:install:msix:tools
+
+  setup:docker:
+    summary: Builds Docker image for cross-compilation (~800MB download)
+    cmds:
+      - task: common:setup:docker

@@ -1,0 +1,216 @@
+<div align="center">
+  <img src="./build/appicon.png" width="112" alt="{{.ProductName}} Logo" />
+  <h1>{{.ProductName}}</h1>
+  <p><strong>基于 Wails v3 + Vue 3 + TypeScript + shadcn-vue 的跨平台桌面应用。</strong></p>
+  <p>托盘常驻 · 单实例 · 开机自启 · 三平台安装包 CI</p>
+  <p>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-A8E7D4?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=246A5A" alt="License MIT"></a>
+    <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27-ADD8F7?style=for-the-badge&logo=go&logoColor=white&labelColor=1F4E6B" alt="Go 1.27"></a>
+    <a href="https://v3.wails.io"><img src="https://img.shields.io/badge/Wails-v3-D0BDF2?style=for-the-badge&labelColor=675688" alt="Wails v3"></a>
+    <a href="https://vuejs.org"><img src="https://img.shields.io/badge/Vue-3-B7E6BA?style=for-the-badge&logo=vuedotjs&logoColor=white&labelColor=3C6944" alt="Vue 3"></a>
+    <a href="https://ui.shadcn.com"><img src="https://img.shields.io/badge/shadcn--vue-2.8-F2C9A0?style=for-the-badge&labelColor=7E5A28" alt="shadcn-vue"></a>
+    <a href="#platform"><img src="https://img.shields.io/badge/Platform-Windows_·_macOS_·_Linux-9EC5FE?style=for-the-badge&labelColor=2B4C7E" alt="Windows · macOS · Linux"></a>
+  </p>
+  <p>
+    <a href="#features">特性</a> ·
+    <a href="#screenshots">应用截图</a> ·
+    <a href="#quickstart">快速开始</a> ·
+    <a href="#structure">目录结构</a> ·
+    <a href="#platform">平台功能</a> ·
+    <a href="#build">构建与打包</a> ·
+    <a href="#roadmap">Roadmap</a>
+  </p>
+</div>
+
+<br/>
+
+<a id="features"></a>
+
+## ✨ 特性
+
+### 🧩 Vue 3 + TypeScript + shadcn-vue 技术栈
+
+前端为 Vue 3.5 + Vite 8 + TypeScript，组件库使用 shadcn-vue（reka-nova 预设）与 Tailwind CSS v4，图标使用 lucide；`@wailsio/runtime` 提供窗口事件等能力，提示组件使用 vue-sonner，主题支持跟随系统 / 浅色 / 深色。
+
+### 🖥️ 托盘常驻
+
+关闭主窗口只是隐藏到托盘，程序继续在后台运行；双击托盘图标恢复主界面，右键菜单提供「显示主界面 / 退出」。开机自启时带 `--tray` 参数静默进入托盘。
+
+### 🔒 单实例
+
+生产构建（`-tags production`）同一时间只允许一个实例：重复启动不会打开第二个窗口，而是把已有窗口带到前台；开机自启触发的重复启动静默退出，不打扰正在使用的窗口。开发构建（`wails3 dev`）不限制多开，方便并行调试。
+
+### 🚀 三平台开机自启
+
+设置界面可通过 `SettingsService.SetAutoStart` 打开 / 关闭开机自启，自启项指向当前可执行文件：
+
+| 平台 | 实现 |
+|---|---|
+| Windows | 注册表 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`（键名使用 productIdentifier，避免冲突） |
+| macOS | `~/Library/LaunchAgents/<productIdentifier>.plist` LaunchAgent |
+| Linux | `~/.config/autostart/<productIdentifier>.desktop` |
+
+### 📦 三平台安装包与 CI
+
+`task package` 一键打包：Windows 为 NSIS 安装包（per-user 免管理员）+ 免安装 exe，macOS 为通用包 `.app` / `.dmg`，Linux 为 AppImage / deb / rpm / AUR。推送 `v*` tag 即触发 GitHub Actions 三平台并行构建并发布 Release。
+
+### 🎨 图标自生成
+
+应用图标（`build/appicon.png`）、Windows `.ico` / macOS `.icns` / 托盘图标由仓库内置的纯标准库生成器产出（`build/tools/icon`），改几行几何参数即可得到全套品牌图标。
+
+<br/>
+
+<a id="screenshots"></a>
+
+## 📷 应用截图
+
+> [!NOTE]
+> 这里是占位说明。开发完成后，把截图放进顶层 `examples/` 目录，然后仿照下面的写法引用（宽度建议 560）：
+>
+> ```html
+> <div align="center">
+>   <p><strong>主界面</strong> —— 一句话说明这个界面能做什么</p>
+>   <img src="./examples/main.png" width="560" alt="主界面" />
+> </div>
+> ```
+
+<div align="center">
+  <p><strong>主界面</strong> —— Greet 演示：输入名字，点击按钮调用 Go 端的 <code>GreetService</code>，结果通过 Wails 自动生成的 TypeScript 绑定返回并显示</p>
+</div>
+
+<a id="tech-stack"></a>
+
+## 🛠️ 技术栈
+
+| 分类 | 核心技术与依赖 |
+|---|---|
+| 桌面框架 | Wails v3.0.0-beta.28（Go 1.27） |
+| 界面 | Vue 3.5 · Vite 8 · TypeScript 5.9 · shadcn/vue 2.8（reka-nova 预设）· Tailwind CSS 4 · reka-ui · lucide · vue-sonner |
+| 工程化 | Task · mise（go / node / pnpm / task 版本锁定）· pnpm（`minimum-release-age`  supply-chain 防护） |
+| 打包 | NSIS（Windows）· .app / .dmg（macOS）· AppImage / nfpm（Linux）· GitHub Actions |
+
+<a id="quickstart"></a>
+
+## 🚀 快速开始
+
+前置工具链由 [mise](https://mise.jdx.dev/) 一键安装（Go 1.27 / Node 26 / pnpm 11 / Task）：
+
+```bash
+mise install        # 按 mise.toml 安装全部工具
+mise exec -- pnpm install --dir frontend   # 安装前端依赖
+```
+
+常用命令：
+
+```bash
+task dev            # 开发模式：前端热更新 + Wails 绑定自动生成
+task build          # 构建当前平台（生产，产物在 bin/）
+task run            # 运行已构建的应用
+task package        # 打包安装包（Windows 为 NSIS，可用 FORMAT=msix 打 MSIX）
+```
+
+> [!TIP]
+> `wails3 dev` 会监听 Go 源码变化并重新生成 `frontend/bindings/` 下的 TypeScript 绑定；前端通过
+> `import.meta.glob("../bindings/*/greetservice")` 引入绑定，因此**改名 go.mod 的模块名也不需要改前端代码**。
+
+<a id="structure"></a>
+
+## 📁 目录结构
+
+```
+├── main.go                 # 应用入口：窗口、服务注册、单实例、托盘
+├── tray.go                 # 系统托盘与托盘菜单（双击显示主界面）
+├── greetservice.go         # 示例服务：Greet，演示前后端调用
+├── settingsservice.go      # 设置服务：主题 / 开机自启 / 版本号
+├── appinfo.go              # appID（系统层唯一标识，Windows 上即 AUMID）
+├── appid_windows.go        # Windows 启动时设置进程 AUMID（任务栏分组）
+├── update.go               # appVersion 默认值（ldflags 注入点）
+├── autostart_*.go          # 开机自启四件套：windows / linux / darwin / other
+├── singleinstance*.go      # 单实例三件套：shared + production tag + !production tag
+├── frontend/               # Vue 3 源码与 Wails 自动生成的 TS 绑定
+├── build/                  # Wails 构建资产（config.yml / 各平台 Taskfile 由 wails3 生成）
+│   ├── tools/icon/         # 纯标准库图标生成器（仓库自带，非 wails 资产）
+│   ├── windows/tray.png    # 托盘图标（tray.go 内嵌引用）
+│   └── darwin/             # dmg 窗口素材
+├── Taskfile.yml            # 顶层任务：build/package/run/dev，按 GOOS 分发
+└── .github/workflows/      # 三平台打包 + Release 发布
+```
+
+<a id="platform"></a>
+
+## 🖥️ 平台功能说明
+
+### 平台相关代码的组织约定
+
+- **四件套**：按平台拆分的实现使用 `feature_windows.go` / `feature_linux.go` / `feature_darwin.go` / `feature_other.go`，文件首行 build tag（`other` 为 `//go:build !windows && !darwin && !linux`），公共签名保持一致。
+- **自定义 tag**：需要按构建模式切换的行为（如单实例）使用 `//go:build production` 与 `//go:build !production` 两个文件，共享逻辑放在无 tag 的文件里。
+- **公共常量**：`appinfo.go` 的 `appID`、`update.go` 的 `appVersion` 放在无 tag 文件中，各平台实现共用。
+
+### 窗口行为
+
+- 关闭窗口 = 隐藏到托盘（`WindowClosing` 钩子取消关闭并 `Hide()`），程序在后台继续运行；`app.Quit()` 才是真正退出。
+- macOS 上不设置 `ApplicationShouldTerminateAfterLastWindowClosed`，保持与其它平台一致的托盘语义。
+
+### Windows 任务栏合并
+
+Windows 上进程的 AppUserModelID 由 `appinfo.go` 的 `appID`（即 `productIdentifier`）在启动时设置（见 `appid_windows.go`），与 `build/windows/wails.exe.manifest` 中的标识一致，因此主窗口与安装包运行实例在任务栏上共用同一身份。
+
+<a id="build"></a>
+
+## 🔧 构建与打包
+
+> [!NOTE]
+> `build/` 下的 Wails 标准资产（`config.yml`、各平台 Taskfile、NSIS / MSIX / plist / nfpm 模板等）由 `wails3 init` / `wails3 update build-assets` 依据你的产品信息自动生成，**不要在模板里手改这些文件**——产品名、公司名、版本号等信息统一在 `build/config.yml` 的 `info` 段维护，然后运行 `wails3 task common:update:build-assets` 重新生成。
+
+### 版本号
+
+| 位置 | 说明 |
+|---|---|
+| `build/config.yml` 的 `info.version` | 唯一权威版本号：二进制资源（`.syso` / 清单 / plist）、各平台安装包元数据都从这里来 |
+| `update.go` 的 `appVersion` | Go 代码内读取版本时的默认值（`SettingsService.Version()`），保持与上面一致即可 |
+| git tag | 推送 `v0.2.0` tag 触发 CI 时，`wails3 update build-assets -productversion` 会把 tag 版本写回 `build/config.yml` |
+
+如需把版本同时编译进 Go 二进制（`-ldflags "-X main.appVersion=x.y.z"`），可在 `build/windows|darwin|linux/Taskfile.yml` 的 `BUILD_FLAGS` 里自行追加。
+
+### 图标替换
+
+`build/appicon.png`（1024×1024）是唯一的图标源（新初始化的项目使用 Wails 默认图标，请替换为自己的品牌图标）；`task build` 会自动生成 `windows/icon.ico` 与 `darwin/icons.icns`。仓库内置了一个纯标准库的图标生成器（`build/tools/icon`），没有设计稿时可用它程序化生图标：
+
+```bash
+go run ./build/tools/icon build/appicon.png            # 应用图标 1024
+go run ./build/tools/icon build/windows/tray.png 32    # 托盘图标
+```
+
+### 各平台打包
+
+| 平台 | 命令 | 产物 |
+|---|---|---|
+| Windows | `task package` | `bin/<app>-amd64-installer.exe`（NSIS）、`bin/<app>.exe` |
+| Windows (MSIX) | `task package FORMAT=msix` | `bin/<app>-<arch>.msix` |
+| macOS | `task darwin:package:universal && task darwin:create:dmg` | `.app` / `.dmg`（需 macOS 或 Docker 交叉编译） |
+| Linux | `task package` | AppImage / deb / rpm / AUR |
+
+### 发布
+
+推送 `v*` 形式的 tag（如 `v0.2.0`）触发 `Package` 工作流：Windows、macOS、Linux 三平台 runner 分别打包并上传 artifact，最后创建 / 更新 GitHub Release 并附加全部产物；`workflow_dispatch` 手动触发只上传 artifact，不创建 Release。首次使用前请把 workflow 里的 `APP_NAME` 改为你的应用名（与 `build/config.yml` 的 `productName` 对应）。
+
+<a id="skills"></a>
+
+## 🤖 Agent Skills
+
+仓库内置了提交信息规范 skill（`.agents/skills/commit/SKILL.md`）：Conventional Commits 风格 + 固定类型图标（如 `✨ feat(core): …`），并要求任何 `git commit` 前经用户按钮式确认。使用 Kimi Code / Claude Code 等 agent 提交代码时会自动遵循。
+
+<a id="roadmap"></a>
+
+## 🗺️ Roadmap
+
+- [ ] 应用内自动更新（可基于 Wails v3 updater + GitHub Releases）
+- [ ] 系统原生通知（窗口隐藏时把 toast 转发到通知中心）
+- [ ] iOS / Android 构建资产
+- [ ] 代码签名与公证（`wails3 setup signing` + `task darwin:sign:notarize`）
+
+<a id="license"></a>
+
+## 📜 开源协议
+
+本项目基于 [MIT](LICENSE) 协议开源。

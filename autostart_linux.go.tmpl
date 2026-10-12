@@ -1,0 +1,79 @@
+//go:build linux
+
+package main
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// autoStartFile 使用 appID 命名，避免与其它应用的自启项冲突。
+var autoStartFile = appID + ".desktop"
+
+func autoStartSupported() bool { return true }
+
+func autoStartTarget() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("获取程序路径失败: %w", err)
+	}
+	return filepath.Clean(exe), nil
+}
+
+func autoStartDesktopFile() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("获取用户配置目录失败: %w", err)
+	}
+	return filepath.Join(dir, "autostart", autoStartFile), nil
+}
+
+func readAutoStart() (bool, string, error) {
+	path, err := autoStartDesktopFile()
+	if err != nil {
+		return false, "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, "", nil
+		}
+		return false, "", fmt.Errorf("读取开机自启配置失败: %w", err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if value, ok := strings.CutPrefix(strings.TrimSpace(line), "Exec="); ok {
+			value = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(value), trayFlag))
+			return true, strings.Trim(value, `"`), nil
+		}
+	}
+	return false, "", nil
+}
+
+func writeAutoStart(exePath string, enabled bool) error {
+	path, err := autoStartDesktopFile()
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("移除开机自启配置失败: %w", err)
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("创建 autostart 目录失败: %w", err)
+	}
+	content := fmt.Sprintf(`[Desktop Entry]
+Type=Application
+Name={{.ProductName}}
+Exec="%s" %s
+X-GNOME-Autostart-enabled=true
+`, exePath, trayFlag)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("写入开机自启配置失败: %w", err)
+	}
+	return nil
+}

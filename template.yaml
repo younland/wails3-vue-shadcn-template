@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://v3.wails.io/schemas/template.v3.json
+name: Vue shadcn Template
+shortname: vue-shadcn
+author: younland
+description: Vue 3 + TypeScript + Vite + shadcn-vue + Tailwind CSS v4 的 Wails v3 模板，含托盘/单实例/开机自启等工程实践
+helpurl: https://github.com/younland/wails3-vue-shadcn-template
+version: v1.0.0
+wailsVersion: 3
+typescript: true

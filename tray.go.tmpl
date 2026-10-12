@@ -1,0 +1,60 @@
+package main
+
+import (
+	_ "embed"
+	"fmt"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
+
+//go:embed build/windows/tray.png
+var trayIconPNG []byte
+
+// trayFlag 使程序静默启动到托盘（开机自启项会带上它）。
+const trayFlag = "--tray"
+
+// trayManager 负责系统托盘及其菜单。
+type trayManager struct {
+	app    *application.App
+	tray   *application.SystemTray
+	window *application.WebviewWindow
+	menu   *application.Menu
+}
+
+func newTrayManager(app *application.App, window *application.WebviewWindow) *trayManager {
+	manager := &trayManager{
+		app:    app,
+		window: window,
+	}
+
+	tray := app.SystemTray.New()
+	manager.tray = tray
+	tray.SetIcon(trayIconPNG)
+	tray.SetTooltip("{{.ProductName}}")
+	manager.menu = app.NewMenu()
+	tray.SetMenu(manager.menu)
+
+	// 双击托盘图标显示主界面（右键弹出菜单，左键单击保持系统默认的「无动作」）
+	tray.OnDoubleClick(manager.showWindow)
+
+	manager.rebuild()
+	return manager
+}
+
+// rebuild 重建托盘菜单；Wails 的托盘菜单是 SetMenu 时构建的原生快照，
+// 重建后必须重新 SetMenu 才会生效。
+func (t *trayManager) rebuild() {
+	t.menu.Clear()
+	t.menu.Add(fmt.Sprintf("{{.ProductName}} v%s", appVersion)).SetEnabled(false)
+	t.menu.AddSeparator()
+	t.menu.Add("显示主界面").OnClick(func(*application.Context) { t.showWindow() })
+	t.menu.AddSeparator()
+	t.menu.Add("退出").OnClick(func(*application.Context) { t.app.Quit() })
+	t.menu.Update()
+	t.tray.SetMenu(t.menu)
+}
+
+func (t *trayManager) showWindow() {
+	t.window.Show()
+	t.window.Focus()
+}

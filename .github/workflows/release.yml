@@ -1,0 +1,321 @@
+name: Package
+
+# 打 tag（如 v0.2.0）或手动触发时构建三平台安装包：
+#   Windows → NSIS 安装包 + 免安装 exe
+#   macOS   → 通用包（arm64 + amd64）的 .app 与 .dmg
+#   Linux   → AppImage、deb、rpm、AUR 包
+#
+# 版本号来自 tag（去掉 v 前缀），通过 APP_VERSION 与 build/config.yml 注入：
+# 二进制（-X main.appVersion）、NSIS 安装包、Info.plist、nfpm 包元数据。
+# 打 tag 触发时会创建/更新对应的 GitHub Release 并附加全部产物；
+# 手动触发只上传为 workflow artifact，不创建 Release。
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，形如 0.2.0（仅手动触发使用）"
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: read
+
+env:
+  APP_NAME: app
+  WAILS3_VERSION: v3.0.0-beta.28
+  NODE_VERSION: "26"
+  PNPM_VERSION: "11"
+  TASK_VERSION: "3.54.0"
+
+jobs:
+  prepare:
+    name: 解析版本号
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      publish: ${{ steps.resolve.outputs.publish }}
+    steps:
+      - name: 解析 tag / 手动输入
+        id: resolve
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            version="${INPUT_VERSION#v}"
+            tag="v${version}"
+            publish="false"
+          else
+            tag="${GITHUB_REF_NAME}"
+            version="${tag#v}"
+            publish="true"
+          fi
+          # NSIS 的 VIProductVersion 在版本号后补一段，所以必须是 x.y.z
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::版本号 ${version} 不是 x.y.z 形式（tag 需要形如 v0.2.0）"
+            exit 1
+          fi
+          {
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "publish=${publish}"
+          } >> "${GITHUB_OUTPUT}"
+
+  windows:
+    name: Windows 安装包
+    needs: prepare
+    runs-on: windows-latest
+    env:
+      APP_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 安装 Task
+        uses: arduino/setup-task@v2
+        with:
+          version: ${{ env.TASK_VERSION }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 安装 wails3 CLI
+        shell: bash
+        run: |
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS3_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+
+      - name: 安装 NSIS
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis --yes --no-progress
+            Add-Content -Path $env:GITHUB_PATH -Value 'C:\Program Files (x86)\NSIS'
+          }
+
+      - name: 写入版本号到包元数据
+        shell: bash
+        run: |
+          wails3 update build-assets -name "${APP_NAME}" -binaryname "${APP_NAME}" \
+            -config build/config.yml -productversion "${APP_VERSION}" -dir build
+
+      - name: 构建并打包
+        shell: bash
+        run: task package
+
+      - name: 收集产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "bin/${APP_NAME}-amd64-installer.exe" "dist/${APP_NAME}-${APP_VERSION}-windows-amd64-setup.exe"
+          cp "bin/${APP_NAME}.exe" "dist/${APP_NAME}-${APP_VERSION}-windows-amd64-portable.exe"
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS 安装包
+    needs: prepare
+    runs-on: macos-14
+    env:
+      APP_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 安装 Task
+        uses: arduino/setup-task@v2
+        with:
+          version: ${{ env.TASK_VERSION }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 安装 wails3 CLI
+        run: |
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS3_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+
+      - name: 写入版本号到包元数据
+        run: |
+          wails3 update build-assets -name "${APP_NAME}" -binaryname "${APP_NAME}" \
+            -config build/config.yml -productversion "${APP_VERSION}" -dir build
+
+      - name: 构建并打包（通用包 + dmg）
+        run: |
+          task darwin:package:universal
+          task darwin:create:dmg
+
+      - name: 收集产物
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for f in bin/*.dmg; do
+            cp "$f" "dist/${APP_NAME}-${APP_VERSION}-darwin-universal.dmg"
+          done
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+          if-no-files-found: error
+
+  linux:
+    name: Linux 安装包 (${{ matrix.arch }})
+    needs: prepare
+    # arm64 使用 GitHub 免费提供的原生 arm runner，避免交叉编译的麻烦
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      APP_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 安装 Task
+        uses: arduino/setup-task@v2
+        with:
+          version: ${{ env.TASK_VERSION }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # GTK4 / WebKitGTK 6.0 是 Wails v3 Linux 的运行与编译依赖，
+      # libfuse2 供 AppImage 打包工具自身运行（24.04 起改名为 libfuse2t64）。
+      # 注意必须装在 wails3 CLI 之前：CLI 用 go install 从源码编译，
+      # 需要 gtk4/webkitgtk 的 pkg-config 依赖才能通过 cgo 检测。
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2 || true
+
+      - name: 安装 wails3 CLI
+        run: |
+          go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS3_VERSION}"
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+
+      - name: 写入版本号到包元数据
+        run: |
+          wails3 update build-assets -name "${APP_NAME}" -binaryname "${APP_NAME}" \
+            -config build/config.yml -productversion "${APP_VERSION}" -dir build
+
+      - name: 构建并打包
+        run: task package ARCH=${{ matrix.arch }}
+
+      # 产物统一命名为 <APP_NAME>-<版本>-linux-<架构>.<格式>（AppImage 用 x86_64/aarch64 惯例，包用 amd64/arm64）。
+      - name: 收集产物
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p dist
+          case "${{ matrix.arch }}" in
+            amd64) apparch=x86_64; pkgarch=amd64 ;;
+            arm64) apparch=aarch64; pkgarch=arm64 ;;
+            *) echo "::error::未知架构 ${{ matrix.arch }}"; exit 1 ;;
+          esac
+          for f in bin/*.AppImage; do cp "$f" "dist/${APP_NAME}-${APP_VERSION}-linux-${apparch}.AppImage"; done
+          for f in bin/*.deb; do cp "$f" "dist/${APP_NAME}-${APP_VERSION}-linux-${pkgarch}.deb"; done
+          for f in bin/*.rpm; do cp "$f" "dist/${APP_NAME}-${APP_VERSION}-linux-${pkgarch}.rpm"; done
+          for f in bin/*.pkg.tar.zst bin/*.tar.zst; do cp "$f" "dist/${APP_NAME}-${APP_VERSION}-linux-${pkgarch}.pkg.tar.zst"; done
+          ls -l dist
+          test -n "$(ls -A dist)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: 创建 Release
+    needs: [prepare, windows, macos, linux]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # gh 需要 git 仓库上下文来解析远程仓库（GH_REPO 也可用，但 checkout 更直观）
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 创建或更新 Release 并附加产物
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ls -l dist
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" dist/* --clobber
+          else
+            gh release create "${TAG}" dist/* --title "${TAG}" --generate-notes
+          fi
